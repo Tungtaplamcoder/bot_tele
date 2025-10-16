@@ -1,91 +1,70 @@
-from telegram.ext import Updater, CommandHandler
+import os
+import pytz
+from flask import Flask
 from mcstatus import JavaServer
 from apscheduler.schedulers.background import BackgroundScheduler
-import pytz, random, logging, os
+from telegram import Bot
+from telegram.ext import Updater, CommandHandler
 from dotenv import load_dotenv
 
 # --- Load biến môi trường ---
 load_dotenv()
-
 TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = int(os.getenv("CHAT_ID"))
+CHAT_ID = os.getenv("CHAT_ID")
 SERVER_IP = os.getenv("SERVER_IP")
-SERVER_PORT = int(os.getenv("SERVER_PORT"))
+SERVER_PORT = int(os.getenv("SERVER_PORT", 25565))
 
-# Bật logging
-logging.basicConfig(format="%(asctime)s - %(message)s", level=logging.INFO)
+bot = Bot(TOKEN)
 
-# --- Các hàm ---
-def format_status_message(status_data):
-    if status_data["online"]:
-        msg = (
-            "📊 **TRẠNG THÁI SERVER**\n\n"
-            "🟢 **Online**\n"
-            f"🔍 Query hoạt động: `{status_data['query']}`\n"
-            f"⏱️ Độ trễ: `{status_data['latency']} ms`\n"
-            f"🕹️ Phiên bản: `{status_data['version']}`\n"
-            f"📜 MOTD: `{status_data['motd']}`\n"
-            f"👥 Người chơi: `{status_data['online_players']} / {status_data['max_players']}`"
-        )
-    else:
-        msg = (
-            "📊 **TRẠNG THÁI SERVER**\n\n"
-            "🔴 **Offline**\n"
-            "⚠️ Không thể kết nối tới server.\n"
-            "⏱️ Độ trễ: —\n"
-            "🕹️ Phiên bản: —\n"
-            "📜 MOTD: —\n"
-            "👥 Người chơi: —"
-        )
-    return msg
-
-
+# --- Hàm kiểm tra trạng thái server ---
 def get_server_status():
     try:
         server = JavaServer.lookup(f"{SERVER_IP}:{SERVER_PORT}")
         status = server.status()
-        latency = random.randint(2, 8)
-        try:
-            query = server.query()
-            query_active = True
-        except Exception:
-            query_active = False
-        return {
-            "online": True,
-            "query": query_active,
-            "latency": latency,
-            "version": status.version.name,
-            "motd": status.description,
-            "online_players": status.players.online,
-            "max_players": status.players.max,
-        }
-    except Exception:
-        return {"online": False}
+        query = server.query()
+        motd = status.description
+        online = "🟢 Online"
+        info = (
+            f"{online}\n"
+            f"🔍 Query hoạt động: True\n"
+            f"⏱️ Độ trễ: {status.latency:.0f} ms\n"
+            f"🕹️ Phiên bản: {status.version.name}\n"
+            f"📜 MOTD: {motd}\n"
+            f"👥 Người chơi: {status.players.online} / {status.players.max}"
+        )
+        return info
+    except Exception as e:
+        return f"🔴 Offline\nLỗi: {e}"
 
-
+# --- Lệnh /status trong Telegram ---
 def status_command(update, context):
     info = get_server_status()
-    msg = format_status_message(info)
-    update.message.reply_text(msg, parse_mode="Markdown")
-    logging.info(f"[COMMAND] {update.message.from_user.first_name} vừa yêu cầu /status")
+    update.message.reply_text(info)
 
-
+# --- Hàm gửi thông báo định kỳ ---
 def scheduled_status(bot):
     info = get_server_status()
-    msg = format_status_message(info)
-    bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
-    logging.info("[SCHEDULED] Đã gửi trạng thái định kỳ 30 phút.")
+    bot.send_message(chat_id=CHAT_ID, text=f"⏰ Cập nhật tự động:\n{info}")
 
-
-# --- Khởi động bot ---
+# --- Cấu hình Telegram Bot ---
 updater = Updater(TOKEN, use_context=True)
 dp = updater.dispatcher
 dp.add_handler(CommandHandler("status", status_command))
 
+# --- Lịch trình kiểm tra 30 phút ---
 scheduler = BackgroundScheduler(timezone=pytz.timezone("Asia/Ho_Chi_Minh"))
-scheduler.add_job(lambda: scheduled_status(updater.bot), "cron", minute="0,30")
+scheduler.add_job(lambda: scheduled_status(bot), "cron", minute="0,30")
 scheduler.start()
 
-print("✅ Bot đã khởi động — sẵn sàng nhận lệnh /status")
-updater.start_polling()
-updater.idle()
+# --- Flask Web App để Render phát hiện port ---
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return f"<pre>{get_server_status()}</pre>"
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    updater.start_polling()
+    print(f"✅ Bot đang chạy & web server đang mở tại cổng {port}")
+    app.run(host="0.0.0.0", port=port)
