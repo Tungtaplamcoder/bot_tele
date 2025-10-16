@@ -4,4 +4,4 @@ apscheduler==3.6.3
 pytz
 python-dotenv
 standard-imghdr
-urllib3
+urllib3==1.26.16
