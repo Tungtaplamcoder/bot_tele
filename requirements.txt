@@ -3,4 +3,4 @@ mcstatus==11.1.1
 apscheduler==3.6.3
 pytz
 python-dotenv
-imghdr-py
+standard-imghdr
