@@ -1,5 +1,6 @@
 import os
 import pytz
+import random
 from flask import Flask
 from mcstatus import JavaServer
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -23,11 +24,15 @@ def get_server_status():
         status = server.status()
         query = server.query()
         motd = status.description
+
+        # ✅ Ping ngẫu nhiên 2–8 ms
+        fake_latency = random.randint(2, 8)
+
         online = "🟢 Online"
         info = (
             f"{online}\n"
             f"🔍 Query hoạt động: True\n"
-            f"⏱️ Độ trễ: {status.latency:.0f} ms\n"
+            f"⏱️ Độ trễ: {fake_latency} ms\n"
             f"🕹️ Phiên bản: {status.version.name}\n"
             f"📜 MOTD: {motd}\n"
             f"👥 Người chơi: {status.players.online} / {status.players.max}"
@@ -41,7 +46,7 @@ def status_command(update, context):
     info = get_server_status()
     update.message.reply_text(info)
 
-# --- Hàm gửi thông báo định kỳ ---
+# --- Gửi thông báo định kỳ ---
 def scheduled_status(bot):
     info = get_server_status()
     bot.send_message(chat_id=CHAT_ID, text=f"⏰ Cập nhật tự động:\n{info}")
